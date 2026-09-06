@@ -187,11 +187,14 @@ def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult
             if file_path.stat().st_size > MAX_FILE_SIZE_BYTES:
                 raise FileSizeExceededError("Video hajmi 50MB dan oshib ketdi.")
 
+            raw_dur = info.get("duration")
+            duration = int(raw_dur) if raw_dur is not None else None
+
             return MediaResult(
                 media_type=MediaType.VIDEO,
                 file_path=file_path,
                 title=info.get("title") or "YouTube Video",
-                duration=info.get("duration"),
+                duration=duration,
             )
         except FileSizeExceededError:
             raise
@@ -260,7 +263,7 @@ def _sync_boost_audio_file(
         file_path=output_mp3,
         title=title,
         performer=performer,
-        duration=duration,
+        duration=int(duration) if duration is not None else None,
     )
 
 
@@ -285,7 +288,8 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
 
     title = info.get("title") or "YouTube Audio"
     uploader = info.get("uploader") or info.get("channel") or "Unknown Artist"
-    duration = info.get("duration")
+    raw_dur = info.get("duration")
+    duration = int(raw_dur) if raw_dur is not None else None
 
     if not is_ffmpeg_available():
         if input_audio.stat().st_size > MAX_FILE_SIZE_BYTES:
