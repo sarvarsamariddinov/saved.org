@@ -1,17 +1,13 @@
 import asyncio
-import html
 import logging
 import os
-import re
 import shutil
 import subprocess
 import tempfile
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import yt_dlp
 
@@ -19,7 +15,6 @@ from config import (
     ARIA2C_CONNECTIONS,
     FFMPEG_PATH,
     MAX_FILE_SIZE_BYTES,
-    PINTEREST_REGEX,
     TEMP_DIR_PREFIX,
     USER_AGENT,
     is_aria2c_available,
@@ -31,9 +26,7 @@ logger = logging.getLogger(__name__)
 
 class MediaType(str, Enum):
     VIDEO = "video"
-    PHOTO = "photo"
     AUDIO = "audio"
-    DOCUMENT = "document"
 
 
 @dataclass
@@ -81,20 +74,12 @@ def _get_base_ydl_opts(output_dir: Path) -> Dict[str, Any]:
             "youtube": {
                 "player_client": ["android", "web"],
             },
-            "instagram": {
-                "api": ["web", "graphql"],
-            },
         },
     }
 
     if not is_ffmpeg_available():
         opts["prefer_ffmpeg"] = False
 
-    # Use aria2c for progressive (non-DASH) downloads when available: it opens
-    # multiple TCP connections per file (segmented download), which is much
-    # faster than a single-connection HTTP GET for Instagram/TikTok/Pinterest/
-    # Facebook links (these are typically one progressive mp4, so
-    # concurrent_fragment_downloads above never kicks in for them).
     if is_aria2c_available():
         opts["external_downloader"] = "aria2c"
         opts["external_downloader_args"] = {
@@ -118,13 +103,9 @@ def _get_base_ydl_opts(output_dir: Path) -> Dict[str, Any]:
 def _detect_media_type_from_file(file_path: Path) -> MediaType:
     """Classifies media type based on file extension."""
     suffix = file_path.suffix.lower()
-    if suffix in [".mp4", ".mov", ".mkv", ".webm", ".avi", ".flv"]:
-        return MediaType.VIDEO
-    elif suffix in [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"]:
-        return MediaType.PHOTO
-    elif suffix in [".mp3", ".m4a", ".ogg", ".wav", ".aac", ".flac", ".opus"]:
+    if suffix in [".mp3", ".m4a", ".ogg", ".wav", ".aac", ".flac", ".opus"]:
         return MediaType.AUDIO
-    return MediaType.DOCUMENT
+    return MediaType.VIDEO
 
 
 def _find_downloaded_file(output_dir: Path, target_ext: Optional[str] = None) -> Path:
@@ -146,81 +127,6 @@ def _find_downloaded_file(output_dir: Path, target_ext: Optional[str] = None) ->
         raise DownloadError("Fayl to'liq yuklab olinmadi.")
 
     return max(valid_files, key=lambda f: f.stat().st_size)
-
-
-def _download_direct_image(image_url: str, output_dir: Path, fallback_title: str = "Pinterest Image") -> MediaResult:
-    """Fast streaming download for direct images."""
-    req = urllib.request.Request(
-        image_url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Referer": "https://www.pinterest.com/",
-        },
-    )
-    ext = ".jpg"
-    if ".png" in image_url.lower():
-        ext = ".png"
-    elif ".webp" in image_url.lower():
-        ext = ".webp"
-    elif ".gif" in image_url.lower():
-        ext = ".gif"
-
-    output_file = output_dir / f"image_{abs(hash(image_url))}{ext}"
-    with urllib.request.urlopen(req, timeout=15) as resp, open(output_file, "wb") as out_f:
-        # Larger copy buffer reduces syscall overhead for bigger images.
-        shutil.copyfileobj(resp, out_f, length=256 * 1024)
-
-    if not output_file.exists() or output_file.stat().st_size == 0:
-        raise DownloadError("Rasm yuklab olinmadi.")
-
-    if output_file.stat().st_size > MAX_FILE_SIZE_BYTES:
-        raise FileSizeExceededError("Fayl hajmi 50MB dan oshib ketdi.")
-
-    return MediaResult(
-        media_type=MediaType.PHOTO,
-        file_path=output_file,
-        title=fallback_title,
-    )
-
-
-def _scrape_pinterest_image_fallback(url: str, output_dir: Path) -> MediaResult:
-    """Fast fallback scraper for Pinterest static photo pins."""
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": USER_AGENT},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            html_content = response.read().decode("utf-8", errors="ignore")
-    except Exception as e:
-        logger.error(f"Error requesting Pinterest page: {e}")
-        raise DownloadError("Pinterest sahifasini ochib bo'lmadi.")
-
-    og_image_match = re.search(r'<meta\s+property=["\']og:image["\']\s+content=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
-    og_title_match = re.search(r'<meta\s+property=["\']og:title["\']\s+content=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
-
-    title = "Pinterest Media"
-    if og_title_match:
-        title = html.unescape(og_title_match.group(1))
-
-    img_url: Optional[str] = None
-    if og_image_match:
-        img_url = og_image_match.group(1)
-
-    if not img_url:
-        pinimg_matches = re.findall(r'https://i\.pinimg\.com/[^"\'\s<>]+', html_content)
-        if pinimg_matches:
-            img_url = pinimg_matches[0]
-
-    if not img_url:
-        raise DownloadError("Pinterest rasmi topilmadi.")
-
-    high_res_url = re.sub(r'/(?:736x|564x|474x|236x)/', '/originals/', img_url)
-
-    try:
-        return _download_direct_image(high_res_url, output_dir, fallback_title=title)
-    except Exception:
-        return _download_direct_image(img_url, output_dir, fallback_title=title)
 
 
 def _sync_extract_info(url: str) -> Dict[str, Any]:
@@ -253,60 +159,6 @@ def _sync_extract_info(url: str) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Fast extraction note for {url}: {e}")
             return {"title": "Media", "duration": 0}
-
-
-def _sync_download_generic(url: str, output_dir: Path) -> MediaResult:
-    """High-speed media download for general URLs."""
-    is_pinterest = bool(PINTEREST_REGEX.search(url))
-    opts = _get_base_ydl_opts(output_dir)
-
-    if is_ffmpeg_available():
-        # Prefer direct single stream first for zero-remux instant download
-        opts.update({
-            "format": "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
-            "merge_output_format": "mp4",
-            "postprocessors": [
-                {
-                    "key": "FFmpegVideoRemuxer",
-                    "preferedformat": "mp4",
-                }
-            ],
-        })
-    else:
-        opts.update({
-            "format": "best[ext=mp4]/best",
-            "prefer_ffmpeg": False,
-        })
-
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True) or {}
-            file_path = _find_downloaded_file(output_dir)
-
-            if file_path.stat().st_size > MAX_FILE_SIZE_BYTES:
-                raise FileSizeExceededError("Fayl hajmi 50MB dan oshib ketdi.")
-
-            media_type = _detect_media_type_from_file(file_path)
-            title = info.get("title") or "Media"
-
-            return MediaResult(
-                media_type=media_type,
-                file_path=file_path,
-                title=title,
-                duration=info.get("duration"),
-            )
-    except FileSizeExceededError:
-        raise
-    except Exception as ydl_err:
-        err_msg = str(ydl_err)
-        if is_pinterest or "no video formats" in err_msg.lower():
-            try:
-                return _scrape_pinterest_image_fallback(url, output_dir)
-            except Exception as scrape_err:
-                logger.error(f"Pinterest fallback error: {scrape_err}")
-                raise DownloadError("Pinterest media faylini yuklab bo'lmadi.")
-
-        raise DownloadError("Media faylini yuklab olishda xatolik yuz berdi.")
 
 
 def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult:
@@ -441,10 +293,6 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
 
 async def extract_info_async(url: str) -> Dict[str, Any]:
     return await asyncio.to_thread(_sync_extract_info, url)
-
-
-async def download_generic_media_async(url: str, output_dir: Path) -> MediaResult:
-    return await asyncio.to_thread(_sync_download_generic, url, output_dir)
 
 
 async def download_youtube_video_async(video_id: str, output_dir: Path) -> MediaResult:

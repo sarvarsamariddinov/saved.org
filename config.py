@@ -22,18 +22,14 @@ MEDIA_CAPTION: str = "⚡ Скачивай видео легко — @VideoSavve
 MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024
 
 # URL Regular Expressions
-URL_REGEX: re.Pattern = re.compile(
-    r"(https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_+.~#?&/=]*)",
-    re.IGNORECASE,
-)
-
 YOUTUBE_REGEX: re.Pattern = re.compile(
     r"(?:https?://)?(?:www\.)?(?:youtube\.com/(?:watch\?v=|embed/|v/|shorts/|live/)|youtu\.be/)([\w-]{11})",
     re.IGNORECASE,
 )
 
-PINTEREST_REGEX: re.Pattern = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:pinterest\.(?:com|co\.[a-z]{2}|[a-z]{2})/(?:pin/|entry/)|pin\.it/)([\w-]+)",
+# Optional non-YouTube URL detection
+URL_REGEX: re.Pattern = re.compile(
+    r"(https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_+.~#?&/=]*)",
     re.IGNORECASE,
 )
 
@@ -51,8 +47,7 @@ USER_AGENT: str = (
 FFMPEG_PATH: str = os.getenv("FFMPEG_PATH", "ffmpeg")
 
 # aria2c external downloader (optional) - gives multi-connection segmented
-# downloads for progressive (non-fragmented) media, which is where most of
-# the download time is spent for Instagram/TikTok/Pinterest/Facebook links.
+# downloads for progressive (non-fragmented) media formats.
 ARIA2C_PATH: str = os.getenv("ARIA2C_PATH", "aria2c")
 
 # Number of parallel connections aria2c opens per download.
