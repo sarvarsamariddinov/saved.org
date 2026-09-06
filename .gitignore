@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *.class
 *.log
-cookies.txt
+# cookies.txt
 .venv/
 env/
 venv/
