@@ -151,6 +151,58 @@ def _sync_extract_info(url: str) -> Dict[str, Any]:
             return {"title": "Media", "duration": 0}
 
 
+def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult:
+    """High-speed YouTube video download."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    opts = _get_base_ydl_opts(output_dir)
+
+    if is_ffmpeg_available():
+        opts.update({
+            "format": (
+                "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
+                "bestvideo[height<=720]+bestaudio/"
+                "best[height<=720][ext=mp4]/"
+                "best[height<=720]/"
+                "best"
+            ),
+            "merge_output_format": "mp4",
+            "postprocessors": [
+                {
+                    "key": "FFmpegVideoRemuxer",
+                    "preferedformat": "mp4",
+                }
+            ],
+        })
+    else:
+        opts.update({
+            "format": "best[height<=720][ext=mp4]/best[ext=mp4]/best",
+            "prefer_ffmpeg": False,
+        })
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=True) or {}
+            file_path = _find_downloaded_file(output_dir, target_ext="mp4" if is_ffmpeg_available() else None)
+
+            if file_path.stat().st_size > MAX_FILE_SIZE_BYTES:
+                raise FileSizeExceededError("Video hajmi 50MB dan oshib ketdi.")
+
+            raw_dur = info.get("duration")
+            duration = int(raw_dur) if raw_dur is not None else None
+
+            return MediaResult(
+                media_type=MediaType.VIDEO,
+                file_path=file_path,
+                title=info.get("title") or "YouTube Video",
+                duration=duration,
+            )
+        except FileSizeExceededError:
+            raise
+        except Exception as e:
+            logger.exception(f"Error downloading YouTube video {video_id}: {e}")
+            raise DownloadError("YouTube videosini yuklashda xatolik yuz berdi.")
+
+
 def _sync_boost_audio_file(
     input_path: Path,
     output_dir: Path,
@@ -253,6 +305,10 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
 
 async def extract_info_async(url: str) -> Dict[str, Any]:
     return await asyncio.to_thread(_sync_extract_info, url)
+
+
+async def download_youtube_video_async(video_id: str, output_dir: Path) -> MediaResult:
+    return await asyncio.to_thread(_sync_download_youtube_video, video_id, output_dir)
 
 
 async def download_youtube_audio_boosted_async(video_id: str, output_dir: Path) -> MediaResult:
