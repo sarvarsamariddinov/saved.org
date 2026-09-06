@@ -24,7 +24,6 @@ from downloader import (
     cleanup_session_dir,
     create_temp_session_dir,
     download_youtube_audio_boosted_async,
-    download_youtube_video_async,
     extract_info_async,
 )
 
@@ -53,10 +52,6 @@ def get_youtube_keyboard(video_id: str) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
-                text="📹 Video",
-                callback_data=f"yt_vid:{video_id}",
-            ),
-            InlineKeyboardButton(
                 text="🎵 Zvuk (Boosted)",
                 callback_data=f"yt_aud:{video_id}",
             ),
@@ -76,7 +71,7 @@ def _clean_title(title: str, max_len: int = 60) -> str:
 async def handle_start_command(message: Message):
     welcome_text = (
         "👋 <b>Assalomu alaykum!</b>\n\n"
-        "Men YouTube'dan video va audio yuklab beruvchi hamda audio fayllar ovozini kuchaytiruvchi tezyurar botman.\n\n"
+        "Men YouTube'dan audio yuklab beruvchi hamda audio fayllar ovozini kuchaytiruvchi tezyurar botman.\n\n"
         "🚀 <b>Imkoniyatlar:</b>\n"
         "• YouTube video yoki shorts havolasini yuboring (yuklashda ⏳ ko'rinadi)\n"
         "• Audio/MP3 fayl yuboring — ovozini balandlashtirib qaytaraman (ishlov berishda 🎶 ko'rinadi)"
@@ -88,7 +83,7 @@ async def handle_start_command(message: Message):
 async def handle_help_command(message: Message):
     help_text = (
         "💡 <b>Qo'llanma:</b>\n\n"
-        "1. <b>YouTube:</b> Havolani yuboring va <b>📹 Video</b> yoki <b>🎵 Zvuk (Boosted)</b> tugmasini bosing (⏳ ko'rinadi).\n"
+        "1. <b>YouTube:</b> Havolani yuboring va <b>🎵 Zvuk (Boosted)</b> tugmasini bosing (⏳ ko'rinadi).\n"
         "2. <b>Audio kuchaytirish:</b> Audio/mp3 fayl yuboring — men ovozini balandlashtirib qaytaraman (🎶 belgisi ko'rinadi).\n"
         "3. 50 MB gacha bo'lgan fayllar qo'llab-quvvatlanadi."
     )
@@ -115,7 +110,7 @@ async def handle_youtube_message(message: Message):
         prompt_text = (
             f"🎬 <b>{title}</b>\n"
             f"⏱ <code>{duration_str}</code>\n\n"
-            f"Formatni tanlang:"
+            f"Audioni yuklash uchun bosing:"
         )
         await status_msg.edit_text(
             prompt_text,
@@ -125,7 +120,7 @@ async def handle_youtube_message(message: Message):
     except Exception as e:
         logger.exception(f"Error handling youtube message for {video_id}: {e}")
         await status_msg.edit_text(
-            "🎬 <b>YouTube Media</b>\n\nFormatni tanlang:",
+            "🎬 <b>YouTube Media</b>\n\nAudioni yuklash uchun bosing:",
             reply_markup=get_youtube_keyboard(video_id),
             parse_mode=ParseMode.HTML,
         )
@@ -134,44 +129,6 @@ async def handle_youtube_message(message: Message):
 @router.message(F.text.regexp(URL_REGEX))
 async def handle_non_youtube_url(message: Message):
     await message.answer("❌ Faqat YouTube havolalarini qabul qilaman.")
-
-
-@router.callback_query(F.data.startswith("yt_vid:"))
-async def handle_youtube_video_callback(callback: CallbackQuery):
-    video_id = callback.data.split("yt_vid:")[1]
-    message = callback.message
-
-    await callback.answer("⏳")
-    if isinstance(message, Message):
-        await message.edit_text("⏳")
-
-    session_dir = create_temp_session_dir()
-    try:
-        async with ChatActionSender(bot=callback.bot, chat_id=callback.message.chat.id, action=ChatAction.UPLOAD_VIDEO):
-            result: MediaResult = await download_youtube_video_async(video_id, session_dir)
-            input_file = FSInputFile(path=result.file_path, filename=f"{video_id}.mp4")
-
-            await callback.message.answer_video(
-                video=input_file,
-                caption=MEDIA_CAPTION,
-                duration=result.duration,
-                parse_mode=ParseMode.HTML,
-            )
-
-        if isinstance(message, Message):
-            await message.delete()
-    except FileSizeExceededError:
-        if isinstance(message, Message):
-            await message.edit_text("❌ Video hajmi 50 MB dan katta.")
-    except DownloadError as e:
-        if isinstance(message, Message):
-            await message.edit_text(f"❌ {e}")
-    except Exception as e:
-        logger.exception(f"Unexpected error in YouTube video callback {video_id}: {e}")
-        if isinstance(message, Message):
-            await message.edit_text("❌ Yuklab bo'lmadi.")
-    finally:
-        cleanup_session_dir(session_dir)
 
 
 @router.callback_query(F.data.startswith("yt_aud:"))
