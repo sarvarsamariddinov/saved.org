@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+*.class
+*.log
+cookies.txt
+.venv/
+env/
+venv/
+*.tmp
+*.temp
+tg_media_pipeline_*
