@@ -59,6 +59,7 @@ MAX_PARALLEL_DOWNLOADS: int = int(os.getenv("MAX_PARALLEL_DOWNLOADS", "24"))
 
 _FFMPEG_AVAILABLE_CACHE: Optional[bool] = None
 _ARIA2C_AVAILABLE_CACHE: Optional[bool] = None
+_JS_RUNTIME_AVAILABLE_CACHE: Optional[bool] = None
 
 
 def _setup_ffmpeg_path() -> None:
@@ -100,3 +101,16 @@ def is_aria2c_available() -> bool:
     if _ARIA2C_AVAILABLE_CACHE is None:
         _ARIA2C_AVAILABLE_CACHE = shutil.which(ARIA2C_PATH) is not None
     return _ARIA2C_AVAILABLE_CACHE
+
+
+def is_js_runtime_available() -> bool:
+    """Checks for deno/node/bun/qjs on PATH. Required for YouTube
+    extraction since yt-dlp 2026.08.19+. If this returns False,
+    YouTube will not work at all, while ffmpeg-only features
+    (uploaded-file audio boost) will keep working normally."""
+    global _JS_RUNTIME_AVAILABLE_CACHE
+    if _JS_RUNTIME_AVAILABLE_CACHE is None:
+        _JS_RUNTIME_AVAILABLE_CACHE = any(
+            shutil.which(exe) is not None for exe in ("deno", "node", "bun", "qjs")
+        )
+    return _JS_RUNTIME_AVAILABLE_CACHE

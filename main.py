@@ -14,7 +14,12 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramNetworkError
 
-from config import BOT_TOKEN, MAX_PARALLEL_DOWNLOADS
+from config import (
+    BOT_TOKEN,
+    MAX_PARALLEL_DOWNLOADS,
+    is_ffmpeg_available,
+    is_js_runtime_available,
+)
 from handlers import router as media_router
 
 # Force line buffering for immediate log output
@@ -68,6 +73,19 @@ async def run_bot() -> None:
     if not BOT_TOKEN:
         logger.critical("BOT_TOKEN is not defined. Please set BOT_TOKEN environment variable.")
         sys.exit(1)
+
+    if is_js_runtime_available():
+        logger.info("JavaScript runtime found - YouTube extraction should work.")
+    else:
+        logger.critical(
+            "Hech qanday JavaScript runtime (deno/node/bun/qjs) topilmadi! "
+            "YouTube ISHLAMAYDI. Dockerfile orqali deno o'rnatilganini "
+            "tekshiring yoki qo'lda o'rnating: "
+            "curl -fsSL https://deno.land/install.sh | sh"
+        )
+
+    if not is_ffmpeg_available():
+        logger.warning("FFmpeg topilmadi. Video remuxing va audio boost ishlamaydi.")
 
     boost_thread_pool()
 
