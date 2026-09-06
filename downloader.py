@@ -209,6 +209,70 @@ def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult
             raise DownloadError("YouTube videosini yuklashda xatolik yuz berdi.")
 
 
+def _sync_boost_audio_file(
+    input_path: Path,
+    output_dir: Path,
+    title: str = "Audio",
+    performer: str = "Unknown Artist",
+    duration: Optional[int] = None,
+) -> MediaResult:
+    """Boosts audio volume using ffmpeg (volume=2.0, 192k mp3)."""
+    if not is_ffmpeg_available():
+        raise DownloadError("Audio ovozini balandlashtirish uchun FFmpeg mavjud emas.")
+
+    if not input_path.exists() or input_path.stat().st_size == 0:
+        raise DownloadError("Yaroqli audio fayl topilmadi.")
+
+    if input_path.stat().st_size > MAX_FILE_SIZE_BYTES:
+        raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_mp3 = output_dir / f"{input_path.stem}_boosted.mp3"
+    if output_mp3.resolve() == input_path.resolve():
+        output_mp3 = output_dir / f"{input_path.stem}_boosted_out.mp3"
+
+    ffmpeg_cmd = [
+        FFMPEG_PATH,
+        "-y",
+        "-i", str(input_path),
+        "-filter:a", "volume=2.0",
+        "-vn",
+        "-c:a", "libmp3lame",
+        "-b:a", "192k",
+        str(output_mp3),
+    ]
+
+    try:
+        subprocess.run(
+            ffmpeg_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=60,
+        )
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        logger.error(f"FFmpeg boosting error for {input_path}: {err_msg}")
+        raise DownloadError("Audio faylini qayta ishlashda xatolik yuz berdi.")
+    except Exception as e:
+        logger.error(f"Error boosting audio {input_path}: {e}")
+        raise DownloadError("Audio faylini qayta ishlashda xatolik yuz berdi.")
+
+    if not output_mp3.exists() or output_mp3.stat().st_size == 0:
+        raise DownloadError("Audio fayli yaratilmadi.")
+
+    if output_mp3.stat().st_size > MAX_FILE_SIZE_BYTES:
+        raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
+
+    return MediaResult(
+        media_type=MediaType.AUDIO,
+        file_path=output_mp3,
+        title=title,
+        performer=performer,
+        duration=duration,
+    )
+
+
 def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResult:
     """High-speed YouTube audio download and boost."""
     url = f"https://www.youtube.com/watch?v={video_id}"
@@ -243,26 +307,16 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
             duration=duration,
         )
 
-    output_mp3 = output_dir / f"{video_id}_boosted.mp3"
-    ffmpeg_cmd = [
-        FFMPEG_PATH,
-        "-y",
-        "-i", str(input_audio),
-        "-filter:a", "volume=2.0",
-        "-vn",
-        "-c:a", "libmp3lame",
-        "-b:a", "192k",
-        str(output_mp3),
-    ]
-
     try:
-        subprocess.run(
-            ffmpeg_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-            timeout=60,
+        return _sync_boost_audio_file(
+            input_path=input_audio,
+            output_dir=output_dir,
+            title=title,
+            performer=uploader,
+            duration=duration,
         )
+    except FileSizeExceededError:
+        raise
     except Exception:
         if input_audio.stat().st_size > MAX_FILE_SIZE_BYTES:
             raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
@@ -273,20 +327,6 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
             performer=uploader,
             duration=duration,
         )
-
-    if not output_mp3.exists() or output_mp3.stat().st_size == 0:
-        raise DownloadError("Audio fayli yaratilmadi.")
-
-    if output_mp3.stat().st_size > MAX_FILE_SIZE_BYTES:
-        raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
-
-    return MediaResult(
-        media_type=MediaType.AUDIO,
-        file_path=output_mp3,
-        title=title,
-        performer=uploader,
-        duration=duration,
-    )
 
 
 # ------------------- Non-Blocking Async Public API ------------------- #
@@ -301,6 +341,18 @@ async def download_youtube_video_async(video_id: str, output_dir: Path) -> Media
 
 async def download_youtube_audio_boosted_async(video_id: str, output_dir: Path) -> MediaResult:
     return await asyncio.to_thread(_sync_download_and_boost_audio, video_id, output_dir)
+
+
+async def boost_audio_file_async(
+    input_path: Path,
+    output_dir: Path,
+    title: str = "Audio",
+    performer: str = "Unknown Artist",
+    duration: Optional[int] = None,
+) -> MediaResult:
+    return await asyncio.to_thread(
+        _sync_boost_audio_file, input_path, output_dir, title, performer, duration
+    )
 
 
 def create_temp_session_dir() -> Path:
