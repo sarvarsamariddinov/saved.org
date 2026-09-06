@@ -268,14 +268,14 @@ def _sync_boost_audio_file(
 
 
 def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResult:
-    """High-speed YouTube audio download and boost."""
+    """High-speed YouTube audio download and boost reusing _sync_boost_audio_file."""
     url = f"https://www.youtube.com/watch?v={video_id}"
     raw_audio_dir = output_dir / "raw"
     raw_audio_dir.mkdir(parents=True, exist_ok=True)
 
     opts = _get_base_ydl_opts(raw_audio_dir)
     opts.update({
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
     })
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -291,38 +291,14 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
     raw_dur = info.get("duration")
     duration = int(raw_dur) if raw_dur is not None else None
 
-    if not is_ffmpeg_available():
-        if input_audio.stat().st_size > MAX_FILE_SIZE_BYTES:
-            raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
-        return MediaResult(
-            media_type=MediaType.AUDIO,
-            file_path=input_audio,
-            title=title,
-            performer=uploader,
-            duration=duration,
-        )
-
-    try:
-        return _sync_boost_audio_file(
-            input_path=input_audio,
-            output_dir=output_dir,
-            title=title,
-            performer=uploader,
-            duration=duration,
-        )
-    except FileSizeExceededError:
-        raise
-    except Exception as e:
-        logger.exception(f"Error boosting audio for {video_id}: {e}")
-        if input_audio.stat().st_size > MAX_FILE_SIZE_BYTES:
-            raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
-        return MediaResult(
-            media_type=MediaType.AUDIO,
-            file_path=input_audio,
-            title=title,
-            performer=uploader,
-            duration=duration,
-        )
+    # Directly reuse the proven boost function
+    return _sync_boost_audio_file(
+        input_path=input_audio,
+        output_dir=output_dir,
+        title=title,
+        performer=uploader,
+        duration=duration,
+    )
 
 
 # ------------------- Non-Blocking Async Public API ------------------- #
