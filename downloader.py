@@ -242,14 +242,14 @@ def _sync_boost_audio_file(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=True,
-            timeout=60,
+            timeout=120,
         )
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr.decode(errors="ignore") if e.stderr else str(e)
-        logger.error(f"FFmpeg boosting error for {input_path}: {err_msg}")
+        logger.exception(f"FFmpeg boosting error for {input_path}: {err_msg}")
         raise DownloadError("Audio faylini qayta ishlashda xatolik yuz berdi.")
     except Exception as e:
-        logger.error(f"Error boosting audio {input_path}: {e}")
+        logger.exception(f"Error boosting audio {input_path}: {e}")
         raise DownloadError("Audio faylini qayta ishlashda xatolik yuz berdi.")
 
     if not output_mp3.exists() or output_mp3.stat().st_size == 0:
@@ -275,7 +275,7 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
 
     opts = _get_base_ydl_opts(raw_audio_dir)
     opts.update({
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
     })
 
     with yt_dlp.YoutubeDL(opts) as ydl:
