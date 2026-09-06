@@ -106,10 +106,11 @@ async def handle_youtube_message(message: Message):
     status_msg = await message.answer("⏳")
     try:
         info = await extract_info_async(f"https://www.youtube.com/watch?v={video_id}")
-        title = _clean_title(info.get("title", "YouTube Media"))
-        duration = info.get("duration", 0)
+        title = _clean_title(info.get("title") or "YouTube Media")
+        raw_dur = info.get("duration")
+        duration = int(raw_dur) if raw_dur is not None else 0
         mins, secs = divmod(duration, 60)
-        duration_str = f"{mins}:{secs:02d}" if duration else "Noma'lum"
+        duration_str = f"{mins}:{secs:02d}" if duration > 0 else "Noma'lum"
 
         prompt_text = (
             f"🎬 <b>{title}</b>\n"
@@ -121,7 +122,8 @@ async def handle_youtube_message(message: Message):
             reply_markup=get_youtube_keyboard(video_id),
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Error handling youtube message for {video_id}: {e}")
         await status_msg.edit_text(
             "🎬 <b>YouTube Media</b>\n\nFormatni tanlang:",
             reply_markup=get_youtube_keyboard(video_id),

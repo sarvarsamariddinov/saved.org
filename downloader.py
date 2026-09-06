@@ -70,11 +70,6 @@ def _get_base_ydl_opts(output_dir: Path) -> Dict[str, Any]:
         "retries": 3,
         "fragment_retries": 3,
         "nocheckcertificate": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-            },
-        },
     }
 
     if not is_ffmpeg_available():
@@ -139,11 +134,6 @@ def _sync_extract_info(url: str) -> Dict[str, Any]:
         "http_headers": {"User-Agent": USER_AGENT},
         "socket_timeout": 10,
         "check_formats": False,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-            },
-        },
     }
     if not is_ffmpeg_available():
         opts["prefer_ffmpeg"] = False
@@ -157,7 +147,7 @@ def _sync_extract_info(url: str) -> Dict[str, Any]:
             info = ydl.extract_info(url, download=False)
             return ydl.sanitize_info(info) or {}
         except Exception as e:
-            logger.warning(f"Fast extraction note for {url}: {e}")
+            logger.exception(f"Fast extraction error for {url}: {e}")
             return {"title": "Media", "duration": 0}
 
 
@@ -169,9 +159,10 @@ def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult
     if is_ffmpeg_available():
         opts.update({
             "format": (
-                "best[height<=720][ext=mp4]/"
                 "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
                 "bestvideo[height<=720]+bestaudio/"
+                "best[height<=720][ext=mp4]/"
+                "best[height<=720]/"
                 "best"
             ),
             "merge_output_format": "mp4",
@@ -205,7 +196,7 @@ def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult
         except FileSizeExceededError:
             raise
         except Exception as e:
-            logger.error(f"Error downloading YouTube video {video_id}: {e}")
+            logger.exception(f"Error downloading YouTube video {video_id}: {e}")
             raise DownloadError("YouTube videosini yuklashda xatolik yuz berdi.")
 
 
@@ -289,7 +280,7 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
             info = ydl.extract_info(url, download=True) or {}
             input_audio = _find_downloaded_file(raw_audio_dir)
         except Exception as e:
-            logger.error(f"Error extracting audio for {video_id}: {e}")
+            logger.exception(f"Error extracting audio for {video_id}: {e}")
             raise DownloadError("Audioni yuklab olishda xatolik yuz berdi.")
 
     title = info.get("title") or "YouTube Audio"
@@ -317,7 +308,8 @@ def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResu
         )
     except FileSizeExceededError:
         raise
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Error boosting audio for {video_id}: {e}")
         if input_audio.stat().st_size > MAX_FILE_SIZE_BYTES:
             raise FileSizeExceededError("Audio hajmi 50MB dan oshib ketdi.")
         return MediaResult(

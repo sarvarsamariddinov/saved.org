@@ -23,7 +23,7 @@ MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024
 
 # URL Regular Expressions
 YOUTUBE_REGEX: re.Pattern = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:youtube\.com/(?:watch\?v=|embed/|v/|shorts/|live/)|youtu\.be/)([\w-]{11})",
+    r"(?:https?://)?(?:(?:www|m|music)\.)?(?:youtube\.com/(?:watch\?v=|embed/|v/|shorts/|live/)|youtu\.be/)([\w-]{11})",
     re.IGNORECASE,
 )
 
