@@ -7,17 +7,12 @@ import tempfile
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-import yt_dlp
+from typing import Optional
 
 from config import (
-    ARIA2C_CONNECTIONS,
     FFMPEG_PATH,
     MAX_FILE_SIZE_BYTES,
     TEMP_DIR_PREFIX,
-    USER_AGENT,
-    is_aria2c_available,
     is_ffmpeg_available,
 )
 
@@ -25,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class MediaType(str, Enum):
-    VIDEO = "video"
     AUDIO = "audio"
 
 
@@ -45,162 +39,8 @@ class DownloadError(Exception):
 
 
 class FileSizeExceededError(DownloadError):
-    """Custom exception raised when downloaded file exceeds 50MB."""
+    """Custom exception raised when file exceeds 50MB."""
     pass
-
-
-def _get_base_ydl_opts(output_dir: Path) -> Dict[str, Any]:
-    """High-speed, optimized options for yt-dlp extractor."""
-    opts: Dict[str, Any] = {
-        "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "max_filesize": MAX_FILE_SIZE_BYTES,
-        "http_headers": {
-            "User-Agent": USER_AGENT,
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-        # High speed concurrency optimizations
-        "check_formats": False,
-        "concurrent_fragment_downloads": 24,
-        "buffersize": 1024 * 1024,
-        "http_chunk_size": 10485760,
-        "socket_timeout": 15,
-        "retries": 3,
-        "fragment_retries": 3,
-        "nocheckcertificate": True,
-    }
-
-    if not is_ffmpeg_available():
-        opts["prefer_ffmpeg"] = False
-
-    if is_aria2c_available():
-        opts["external_downloader"] = "aria2c"
-        opts["external_downloader_args"] = {
-            "aria2c": [
-                "-x", str(ARIA2C_CONNECTIONS),
-                "-s", str(ARIA2C_CONNECTIONS),
-                "-k", "1M",
-                "--summary-interval=0",
-                "--console-log-level=warn",
-            ]
-        }
-
-    # Automatically load cookies.txt if present
-    cookies_file = Path("cookies.txt")
-    if cookies_file.exists():
-        opts["cookiefile"] = str(cookies_file.resolve())
-
-    return opts
-
-
-def _detect_media_type_from_file(file_path: Path) -> MediaType:
-    """Classifies media type based on file extension."""
-    suffix = file_path.suffix.lower()
-    if suffix in [".mp3", ".m4a", ".ogg", ".wav", ".aac", ".flac", ".opus"]:
-        return MediaType.AUDIO
-    return MediaType.VIDEO
-
-
-def _find_downloaded_file(output_dir: Path, target_ext: Optional[str] = None) -> Path:
-    """Finds the primary downloaded media file in the specified directory."""
-    files = list(output_dir.iterdir())
-    if not files:
-        raise DownloadError("Fayl yuklab olinmadi.")
-
-    if target_ext:
-        for f in files:
-            if f.is_file() and f.suffix.lower() == f".{target_ext.lower()}":
-                return f
-
-    valid_files = [
-        f for f in files
-        if f.is_file() and not f.name.endswith((".part", ".ytdl", ".temp", ".aria2"))
-    ]
-    if not valid_files:
-        raise DownloadError("Fayl to'liq yuklab olinmadi.")
-
-    return max(valid_files, key=lambda f: f.stat().st_size)
-
-
-def _sync_extract_info(url: str) -> Dict[str, Any]:
-    """Fast metadata extraction."""
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "skip_download": True,
-        "http_headers": {"User-Agent": USER_AGENT},
-        "socket_timeout": 10,
-        "check_formats": False,
-    }
-    if not is_ffmpeg_available():
-        opts["prefer_ffmpeg"] = False
-
-    cookies_file = Path("cookies.txt")
-    if cookies_file.exists():
-        opts["cookiefile"] = str(cookies_file.resolve())
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
-            return ydl.sanitize_info(info) or {}
-        except Exception as e:
-            logger.exception(f"Fast extraction error for {url}: {e}")
-            return {"title": "Media", "duration": 0}
-
-
-def _sync_download_youtube_video(video_id: str, output_dir: Path) -> MediaResult:
-    """High-speed YouTube video download."""
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    opts = _get_base_ydl_opts(output_dir)
-
-    if is_ffmpeg_available():
-        opts.update({
-            "format": (
-                "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/"
-                "bestvideo[height<=720]+bestaudio/"
-                "best[height<=720][ext=mp4]/"
-                "best[height<=720]/"
-                "best"
-            ),
-            "merge_output_format": "mp4",
-            "postprocessors": [
-                {
-                    "key": "FFmpegVideoRemuxer",
-                    "preferedformat": "mp4",
-                }
-            ],
-        })
-    else:
-        opts.update({
-            "format": "best[height<=720][ext=mp4]/best[ext=mp4]/best",
-            "prefer_ffmpeg": False,
-        })
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=True) or {}
-            file_path = _find_downloaded_file(output_dir, target_ext="mp4" if is_ffmpeg_available() else None)
-
-            if file_path.stat().st_size > MAX_FILE_SIZE_BYTES:
-                raise FileSizeExceededError("Video hajmi 50MB dan oshib ketdi.")
-
-            raw_dur = info.get("duration")
-            duration = int(raw_dur) if raw_dur is not None else None
-
-            return MediaResult(
-                media_type=MediaType.VIDEO,
-                file_path=file_path,
-                title=info.get("title") or "YouTube Video",
-                duration=duration,
-            )
-        except FileSizeExceededError:
-            raise
-        except Exception as e:
-            logger.exception(f"Error downloading YouTube video {video_id}: {e}")
-            raise DownloadError("YouTube videosini yuklashda xatolik yuz berdi.")
 
 
 def _sync_boost_audio_file(
@@ -267,53 +107,7 @@ def _sync_boost_audio_file(
     )
 
 
-def _sync_download_and_boost_audio(video_id: str, output_dir: Path) -> MediaResult:
-    """High-speed YouTube audio download and boost reusing _sync_boost_audio_file."""
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    raw_audio_dir = output_dir / "raw"
-    raw_audio_dir.mkdir(parents=True, exist_ok=True)
-
-    opts = _get_base_ydl_opts(raw_audio_dir)
-    opts.update({
-        "format": "bestaudio/best",
-    })
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=True) or {}
-            input_audio = _find_downloaded_file(raw_audio_dir)
-        except Exception as e:
-            logger.exception(f"Error extracting audio for {video_id}: {e}")
-            raise DownloadError("Audioni yuklab olishda xatolik yuz berdi.")
-
-    title = info.get("title") or "YouTube Audio"
-    uploader = info.get("uploader") or info.get("channel") or "Unknown Artist"
-    raw_dur = info.get("duration")
-    duration = int(raw_dur) if raw_dur is not None else None
-
-    # Directly reuse the proven boost function
-    return _sync_boost_audio_file(
-        input_path=input_audio,
-        output_dir=output_dir,
-        title=title,
-        performer=uploader,
-        duration=duration,
-    )
-
-
 # ------------------- Non-Blocking Async Public API ------------------- #
-
-async def extract_info_async(url: str) -> Dict[str, Any]:
-    return await asyncio.to_thread(_sync_extract_info, url)
-
-
-async def download_youtube_video_async(video_id: str, output_dir: Path) -> MediaResult:
-    return await asyncio.to_thread(_sync_download_youtube_video, video_id, output_dir)
-
-
-async def download_youtube_audio_boosted_async(video_id: str, output_dir: Path) -> MediaResult:
-    return await asyncio.to_thread(_sync_download_and_boost_audio, video_id, output_dir)
-
 
 async def boost_audio_file_async(
     input_path: Path,

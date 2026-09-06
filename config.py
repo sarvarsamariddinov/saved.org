@@ -1,5 +1,4 @@
 import os
-import re
 import shutil
 from pathlib import Path
 from typing import Optional
@@ -16,50 +15,21 @@ BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
 
 # Bot Username & Caption Branding
 BOT_USERNAME: str = "VideoSavvedBot"
-MEDIA_CAPTION: str = "⚡ Скачивай видео легко — @VideoSavvedBot"
+MEDIA_CAPTION: str = "⚡ Ovoz 2x kuchaytirildi — @VideoSavvedBot"
 
 # Telegram Bot API standard upload limit (50 MB)
 MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024
 
-# URL Regular Expressions
-YOUTUBE_REGEX: re.Pattern = re.compile(
-    r"(?:https?://)?(?:(?:www|m|music)\.)?(?:youtube\.com/(?:watch\?v=|embed/|v/|shorts/|live/)|youtu\.be/)([\w-]{11})",
-    re.IGNORECASE,
-)
-
-# Optional non-YouTube URL detection
-URL_REGEX: re.Pattern = re.compile(
-    r"(https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b[-a-zA-Z0-9()@:%_+.~#?&/=]*)",
-    re.IGNORECASE,
-)
-
 # Temporary session folder prefix
-TEMP_DIR_PREFIX: str = "tg_media_pipeline_"
-
-# Standard User-Agent mimicking a modern browser
-USER_AGENT: str = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/128.0.0.0 Safari/537.36"
-)
+TEMP_DIR_PREFIX: str = "tg_audio_pipeline_"
 
 # FFmpeg Executable check
 FFMPEG_PATH: str = os.getenv("FFMPEG_PATH", "ffmpeg")
 
-# aria2c external downloader (optional) - gives multi-connection segmented
-# downloads for progressive (non-fragmented) media formats.
-ARIA2C_PATH: str = os.getenv("ARIA2C_PATH", "aria2c")
-
-# Number of parallel connections aria2c opens per download.
-ARIA2C_CONNECTIONS: int = int(os.getenv("ARIA2C_CONNECTIONS", "16"))
-
-# How many downloads can run truly in parallel across all users at once.
-# This backs the asyncio default executor used by asyncio.to_thread().
+# How many audio boost processes can run in parallel
 MAX_PARALLEL_DOWNLOADS: int = int(os.getenv("MAX_PARALLEL_DOWNLOADS", "24"))
 
 _FFMPEG_AVAILABLE_CACHE: Optional[bool] = None
-_ARIA2C_AVAILABLE_CACHE: Optional[bool] = None
-_JS_RUNTIME_AVAILABLE_CACHE: Optional[bool] = None
 
 
 def _setup_ffmpeg_path() -> None:
@@ -93,24 +63,3 @@ def is_ffmpeg_available() -> bool:
     if _FFMPEG_AVAILABLE_CACHE is None:
         _FFMPEG_AVAILABLE_CACHE = shutil.which(FFMPEG_PATH) is not None
     return _FFMPEG_AVAILABLE_CACHE
-
-
-def is_aria2c_available() -> bool:
-    """Check if aria2c is installed and available in PATH (cached)."""
-    global _ARIA2C_AVAILABLE_CACHE
-    if _ARIA2C_AVAILABLE_CACHE is None:
-        _ARIA2C_AVAILABLE_CACHE = shutil.which(ARIA2C_PATH) is not None
-    return _ARIA2C_AVAILABLE_CACHE
-
-
-def is_js_runtime_available() -> bool:
-    """Checks for deno/node/bun/qjs on PATH. Required for YouTube
-    extraction since yt-dlp 2026.08.19+. If this returns False,
-    YouTube will not work at all, while ffmpeg-only features
-    (uploaded-file audio boost) will keep working normally."""
-    global _JS_RUNTIME_AVAILABLE_CACHE
-    if _JS_RUNTIME_AVAILABLE_CACHE is None:
-        _JS_RUNTIME_AVAILABLE_CACHE = any(
-            shutil.which(exe) is not None for exe in ("deno", "node", "bun", "qjs")
-        )
-    return _JS_RUNTIME_AVAILABLE_CACHE

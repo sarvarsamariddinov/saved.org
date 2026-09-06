@@ -18,9 +18,8 @@ from config import (
     BOT_TOKEN,
     MAX_PARALLEL_DOWNLOADS,
     is_ffmpeg_available,
-    is_js_runtime_available,
 )
-from handlers import router as media_router
+from handlers import router as audio_router
 
 # Force line buffering for immediate log output
 if hasattr(sys.stdout, "reconfigure"):
@@ -45,26 +44,15 @@ def create_bot_session() -> AiohttpSession:
     session = AiohttpSession()
     session._connector_init["family"] = socket.AF_INET
     session._connector_init["ttl_dns_cache"] = 300
-    # Bigger connection pool so many simultaneous uploads/replies to Telegram
-    # don't queue up behind each other on a single connector.
     session._connector_init["limit"] = 100
     session._connector_init["limit_per_host"] = 0
     return session
 
 
 def boost_thread_pool() -> None:
-    """
-    Every blocking call (yt-dlp extraction/download, ffmpeg, urllib) runs via
-    asyncio.to_thread(), which uses the loop's *default* executor. Python's
-    default executor caps out at min(32, cpu_count + 4) workers - on small
-    VPS/containers (1-2 vCPU) that can be as low as 5-6 threads, so several
-    users sending links at the same time end up queued behind each other
-    even though the bottleneck is network I/O, not CPU. Raising this lets
-    that many downloads actually run concurrently.
-    """
     loop = asyncio.get_running_loop()
     loop.set_default_executor(
-        ThreadPoolExecutor(max_workers=MAX_PARALLEL_DOWNLOADS, thread_name_prefix="media_dl")
+        ThreadPoolExecutor(max_workers=MAX_PARALLEL_DOWNLOADS, thread_name_prefix="audio_boost")
     )
 
 
@@ -74,18 +62,10 @@ async def run_bot() -> None:
         logger.critical("BOT_TOKEN is not defined. Please set BOT_TOKEN environment variable.")
         sys.exit(1)
 
-    if is_js_runtime_available():
-        logger.info("JavaScript runtime found - YouTube extraction should work.")
-    else:
-        logger.critical(
-            "Hech qanday JavaScript runtime (deno/node/bun/qjs) topilmadi! "
-            "YouTube ISHLAMAYDI. Dockerfile orqali deno o'rnatilganini "
-            "tekshiring yoki qo'lda o'rnating: "
-            "curl -fsSL https://deno.land/install.sh | sh"
-        )
-
     if not is_ffmpeg_available():
-        logger.warning("FFmpeg topilmadi. Video remuxing va audio boost ishlamaydi.")
+        logger.warning("FFmpeg topilmadi. Audio boost ishlamaydi.")
+    else:
+        logger.info("FFmpeg topildi - Audio booster faol.")
 
     boost_thread_pool()
 
@@ -98,7 +78,7 @@ async def run_bot() -> None:
     dp = Dispatcher()
 
     # Include handler routers
-    dp.include_router(media_router)
+    dp.include_router(audio_router)
 
     # Reconnection loop for network resilience
     while True:

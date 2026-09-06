@@ -6,18 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    aria2 \
     ca-certificates \
-    curl \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
-
-# Deno: required by yt-dlp-ejs to solve YouTube's JS challenge.
-# Without this, YouTube download/extraction fails silently.
-ENV DENO_INSTALL=/usr/local
-RUN curl -fsSL https://deno.land/install.sh | sh
-ENV PATH="/usr/local/bin:${PATH}"
-RUN deno --version
 
 WORKDIR /app
 
